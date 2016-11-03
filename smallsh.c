@@ -86,7 +86,7 @@ int main(int argc, char const *argv[]){
 
         //check if line is empty or a comment
         //(lines that begin with # are considered comments)
-        if(length > 0 && commandLineBuffer[0] == COMMENT_CHAR){
+        if(length == 0 || commandLineBuffer[0] == COMMENT_CHAR){
         	//line is a comment or empty, so don't do anything
         	continue;
         }
