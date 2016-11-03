@@ -30,7 +30,8 @@
 * Get user input functions
 **************************************/
 
-//gets user input, and stores in commandLineBuffer, minus trailing newlines
+//gets user input, stores in commandLineBuffer 
+//and chomps(deletes) trailing newline from pressing enter to input command
 void getUserInput(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH]){
     //clear the buffer
     bzero(commandLineBuffer, COMMAND_LINE_MAX_LENGTH);
@@ -39,12 +40,10 @@ void getUserInput(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH]){
     //check to see if command ends in newline-if so remove it
     int length = strlen(commandLineBuffer);
     //start at last character (last character is technically \0), but not counted by strlen
-    int currentIndex = length - 1;
-    //replace all trailing newlines with null char
-    while(commandLineBuffer[currentIndex] == '\n' && currentIndex >= 0){
-        //remove newline
-        commandLineBuffer[currentIndex] = '\0';
-        currentIndex--;
+    int indexOfLastChar = length - 1;
+    //check if last char is newline, and if so, replace with null char
+    if(commandLineBuffer[indexOfLastChar] == '\n'){
+        commandLineBuffer[indexOfLastChar] = '\0';
     }
 }
 
