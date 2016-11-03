@@ -55,8 +55,12 @@ void writePrompt(){
 /*************************************
 * Status functions
 **************************************/
-void printStatus(int returnStatusCode){
+//prints the status code
+//returns new status code which should always be 0
+//since status command should never fail
+int printStatus(int returnStatusCode){
 	printf("exit value %d\n", returnStatusCode);
+    return 0;
 }
 
 
@@ -88,7 +92,7 @@ int main(int argc, char const *argv[]){
         }
         //check for 'status' command to print status
         else if(strcmp(commandLineBuffer, "status") == 0){
-            printStatus(returnStatusCode);
+            returnStatusCode = printStatus(returnStatusCode);
         }
     }
 
