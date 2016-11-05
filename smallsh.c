@@ -20,6 +20,8 @@
 #include <errno.h>
 //for chdir
 #include <unistd.h>
+//for waitpid
+#include <sys/wait.h>
 
 /**
 * Constants
@@ -103,7 +105,7 @@ int printStatus(int returnStatusCode){
 /*************************************
 * 'CD' functions
 **************************************/
-//executes 'cd' command in commandlineBuffer by
+//executes 'cd' command in commandLineBuffer by
 //changing current working directory to that given in the command, or the home directory
 //if none given
 //if there is an error - such as directory not readable, not existing, or a file and not a directory
@@ -183,6 +185,58 @@ int executeCD(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength)
 }
 
 
+//creates a separate process to execute command given in commandLineBuffer and then
+//executes the command
+//return 0 if process succeeded, or 1 if it doesn't
+//based on: https://support.sas.com/documentation/onlinedoc/sasc/doc/lr2/waitpid.htm
+int executeCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength){
+    pid_t processId = fork();
+    //create variable to store return value from child process, and return value from exec
+    int status;
+    //stores result from waitpid - can't declare variable in switch statement
+    pid_t endId;
+    switch(processId){
+        //error with fork
+        case -1:
+            printf("Could not create new process to execute %s\n", commandLineBuffer);
+            return 1;
+            break;
+        //child process executing command
+        case 0:
+            //based on: http://stackoverflow.com/questions/21558937/i-do-not-understand-how-execlp-works-in-linux
+            status = execlp(commandLineBuffer, commandLineBuffer, (char *)NULL);
+            //check for error
+            if(status == -1){
+                status = 1;
+            }
+            else{
+                status = 0;
+            }
+            //close process after exec completes
+            exit(status);
+            break;
+        //parent process
+        //wait for child to finish executing and return result
+        default:
+            endId = waitpid(processId, &status, 0);
+            //check for error calling waitpid
+            if(endId == -1){
+                printf("Error calling waitpid for %s\n", commandLineBuffer);
+                return 1;
+            }
+            //examine status - 0 means success, other values mean there was an error or 
+            //process was interrupted
+            //so normalize it for return value
+            //https://support.sas.com/documentation/onlinedoc/sasc/doc/lr2/waitpid.htm#statInfo
+            if(status != 0){
+                status = 1;
+            }
+            return status;
+            break;
+    }
+}
+
+
 /**
 * Main function
 */
@@ -219,6 +273,9 @@ int main(int argc, char const *argv[]){
         }
         else if(isCommandCD(commandLineBuffer, bufferLength) == 1){
             returnStatusCode = executeCD(commandLineBuffer, bufferLength);
+        }
+        else{
+            returnStatusCode = executeCommand(commandLineBuffer, bufferLength);
         }
     }
 
