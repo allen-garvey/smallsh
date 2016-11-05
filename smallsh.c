@@ -116,6 +116,11 @@ int executeCD(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength)
         //don't allocate memory for directoryName, since getenv returns
         //pointer to already existing string
         directoryName = getenv("HOME");
+        //in the case that environment variable can't be found,
+        //null is returned, so check for that, as that is an error
+        if(directoryName == NULL){
+            return 1;
+        }
     }
     //else all data after 'cd ' is directory name
     else{
