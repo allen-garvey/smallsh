@@ -18,6 +18,8 @@
 #include <dirent.h>
 //for checking directory errors
 #include <errno.h>
+//for chdir
+#include <unistd.h>
 
 /**
 * Constants
@@ -111,6 +113,9 @@ int executeCD(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength)
     //extract directory from command
     //initialize variable to hold directory
     char *directoryName;
+    //need to know if we need to free directoryName, since
+    //getting environment variable doesn't allocate space
+    int didAllocateDirectoryName = 0;
     //if just 'cd', directoryName should be home directory
     if(strcmp(commandLineBuffer, "cd") == 0){
         //don't allocate memory for directoryName, since getenv returns
@@ -128,20 +133,25 @@ int executeCD(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength)
         directoryName = malloc(sizeof(char) * COMMAND_LINE_MAX_LENGTH);
         //check malloc succeeded
         assert(directoryName != NULL);
+        //save that we allocated memory
+        didAllocateDirectoryName = 1;
         //fill with null bytes
         bzero(directoryName, COMMAND_LINE_MAX_LENGTH);
         //based on: http://stackoverflow.com/questions/6205195/how-can-i-copy-part-of-another-string-in-c-given-a-starting-and-ending-index
         //int startIndex = &commandLineBuffer + 2;
         strncpy(directoryName, (char *) &commandLineBuffer[3], bufferLength - 3);
     }
-    //check if directory is existing, readable, and user has permissions
-    //based on: http://stackoverflow.com/questions/12510874/how-can-i-check-if-a-directory-exists
+    //change working directory - if return value is -1 there were errors, 0 means it succeeded
+    //based on: https://www.gnu.org/software/libc/manual/html_node/Working-Directory.html
+    //and http://stackoverflow.com/questions/12510874/how-can-i-check-if-a-directory-exists
     //and http://pubs.opengroup.org/onlinepubs/009695399/functions/opendir.html
-    DIR* dir = opendir(directoryName);
-    if(dir){
+    int changeWorkingDirectoryReturnValue = chdir(directoryName);
+    if(changeWorkingDirectoryReturnValue == 0){
         //directory exists, and is readable and user has permissions
-        //close and release dir
-        closedir(dir);
+        //free memory if we allocated it
+        if(didAllocateDirectoryName){
+            free(directoryName);
+        }
         return 0;
     }
     //there was an error, so figure out what it was 
@@ -164,8 +174,10 @@ int executeCD(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength)
             printf("Could not open %s\n", directoryName);
             break;
     }
-    //free space from directoryName
-    free(directoryName);
+    //free memory if we allocated it
+    if(didAllocateDirectoryName){
+        free(directoryName);
+    }
     //return 1 since there was an error
     return 1;
 }
