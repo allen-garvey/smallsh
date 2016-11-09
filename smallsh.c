@@ -184,6 +184,79 @@ int executeCD(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength)
     return 1;
 }
 
+//parses commands and arguments in commandLineBuffer and splits into array at whitespace
+//commandArguments should be empty array where return value is stored and last item is NULL
+//allocates memory for strings in commandArguments so should be destroyed afterwards
+//commandLineBuffer is altered by strtok
+//returns length of commandArguments array
+int parseCommandArguments(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], char *commandArguments[MAX_ARGUMENT_COUNT + 1]){
+    //pointer used by strtok_r to store position in string
+    char *save;
+    //initialize variable to hold current position in array
+    int i = 0;
+    //initialize strtok with commandLineBuffer
+    char *currentWord = strtok_r(commandLineBuffer, " ", &save);
+
+    //continue until no more arguments in buffer or we have reached argument count limit
+    while( i < MAX_ARGUMENT_COUNT && currentWord != NULL){
+        //need to allocate and copy space for word or it will
+        //be cleaned up once we exit function
+        char *savedWord = malloc(strlen(currentWord) + 1);
+        //sanity check for malloc
+        assert(savedWord != NULL);
+        //copy currentWord so it can be saved
+        strcpy(savedWord, currentWord);
+
+        commandArguments[i] = savedWord;
+        i++;
+        //after the first time, call strtok with NULL
+        currentWord = strtok_r(NULL, " ", &save);
+    }
+    //make sure last item is NULL
+    commandArguments[i] = NULL;
+    return i;
+}
+
+//free space allocated for arguments in commandArguments array
+void destroyCommandArguments(char *commandArguments[MAX_ARGUMENT_COUNT + 1], int argumentCount){
+    //initialize variables to hold current array index and current argument to be freed
+    int i = 0;
+    char *currentArgument;
+    //free all arguments until we reach null or we have gone past end of array
+    while(i < argumentCount && (currentArgument = commandArguments[i]) != NULL ){
+        //free memory
+        free(currentArgument);
+    }
+}
+
+
+//Executes parses command in commandLineBuffer and executes in foreground for child process
+void childProcessExecuteCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH]){
+    //initialize variable to store commands in commandLineBuffer parsed into array
+    //need space for 1 more than max arguments because we need to store NULL at the end
+    char *commandArguments[MAX_ARGUMENT_COUNT + 1];
+    int argumentCount = parseCommandArguments(commandLineBuffer, commandArguments);
+    //only run command if there is a command to be run
+    if(argumentCount < 1){
+        //no commands (commandLineBuffer was empty of just whitespace), so exit early
+        exit(0);
+    }
+    //first item is commandArguments is program name, and we need to pass it again in the arguments
+    int status = execvp(commandArguments[0], commandArguments);
+    //free memory allocated for commandArguments
+    destroyCommandArguments(commandArguments, argumentCount);
+    //check for error and normalize status to be either 1 for error
+    //or 0 for finished successfully
+    if(status == -1){
+        status = 1;
+    }
+    else{
+        status = 0;
+    }
+    //close process after exec completes
+    exit(status);
+}
+
 
 //creates a separate process to execute command given in commandLineBuffer and then
 //executes the command
@@ -203,17 +276,10 @@ int executeCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLe
             break;
         //child process executing command
         case 0:
-            //based on: http://stackoverflow.com/questions/21558937/i-do-not-understand-how-execlp-works-in-linux
-            status = execlp(commandLineBuffer, commandLineBuffer, (char *)NULL);
-            //check for error
-            if(status == -1){
-                status = 1;
-            }
-            else{
-                status = 0;
-            }
-            //close process after exec completes
-            exit(status);
+            childProcessExecuteCommand(commandLineBuffer);
+            //should not reach here, because childProcessExecuteCommand exits, but we need return
+            //statement so compiler doesn't complain
+            return status;
             break;
         //parent process
         //wait for child to finish executing and return result
