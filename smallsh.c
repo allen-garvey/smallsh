@@ -20,6 +20,8 @@
 #include <errno.h>
 //for chdir
 #include <unistd.h>
+//for pid
+#include <sys/types.h>
 //for waitpid
 #include <sys/wait.h>
 
@@ -36,6 +38,12 @@
 
 //character used at start of a line to define a comment
 #define COMMENT_CHAR '#'
+
+//create custom bool class, since c99 is required for stdbool.h
+typedef int BOOL;
+//members of BOOL type
+#define TRUE 1
+#define FALSE 0
 
 
 /*************************************
@@ -229,9 +237,69 @@ void destroyCommandArguments(char *commandArguments[MAX_ARGUMENT_COUNT + 1], int
     }
 }
 
+//takes command in commandLineBuffer and modifies it in-place to expand
+//$$ in the command to the current process id 
+void expandVariables(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength){
+    //create empty string to store commandLineBuffer with expanded pid
+    char commandLineBufferExpanded[COMMAND_LINE_MAX_LENGTH];
+    //initialize with null chars
+    bzero(commandLineBufferExpanded, COMMAND_LINE_MAX_LENGTH);
+    //initialize variables to store the index in the array for the source and destination index
+    int sourceIndex;
+    //need separate index for the destination string because as we expand $$, it will be potentially be
+    //longer than the source, and thus the indexes will be out of sync
+    int destIndex = 0;
+    //keep track if previous character was a dollar sign, because if we then see a second one we know to expand
+    BOOL previousCharWasDollarSign = FALSE;
+    //convert pid to string
+    //based on: http://stackoverflow.com/questions/15262315/how-to-convert-pid-t-to-string
+    char pidString[COMMAND_LINE_MAX_LENGTH];
+    sprintf(pidString, "%ld", (long)getpid());
+    int pidStringLength = strlen(pidString);
+
+    for(sourceIndex = 0; sourceIndex < bufferLength && destIndex < COMMAND_LINE_MAX_LENGTH - 1; ++sourceIndex){
+        char currentChar = commandLineBuffer[sourceIndex];
+        if(currentChar == '$' && previousCharWasDollarSign == TRUE){
+            //we need to erase the previous dollar sign
+            destIndex--;
+            int pidStringIndex;
+            //copy pid string to expanded variables, overwriting the previous $ that we have already written
+            for(pidStringIndex = 0; pidStringIndex < pidStringLength; ++pidStringIndex){
+                char pidChar = pidString[pidStringIndex];
+                commandLineBufferExpanded[destIndex] = pidChar;
+                destIndex++;
+            }
+            //reset if previous char was dollar sign, because we need to be able to expand
+            //$$$$ to pidpid
+            previousCharWasDollarSign = FALSE;
+        }
+        //no consecutive dollar sign, so no expanding variables
+        else{
+            //see if we are seeing dollar sign for the first time
+            if(currentChar == '$'){
+                previousCharWasDollarSign = TRUE;
+            }
+            //otherwise reset it
+            else{
+                previousCharWasDollarSign = FALSE;
+            }
+            //no variables to expand, so simply copy current character
+            //and increment the destination index, since we have written in it
+            commandLineBufferExpanded[destIndex] = currentChar;
+            destIndex++;
+        }
+    }
+    //overwrite commandLineBuffer with expanded version
+    //if the expanded version ends up being longer than the max length it will be truncated
+    strncpy(commandLineBuffer, commandLineBufferExpanded, COMMAND_LINE_MAX_LENGTH);
+}
+
 
 //Executes parses command in commandLineBuffer and executes in foreground for child process
-void childProcessExecuteCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH]){
+void childProcessExecuteCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength){
+    //expand $$ to pid in commandLineBuffec
+    expandVariables(commandLineBuffer, bufferLength);
+
     //initialize variable to store commands in commandLineBuffer parsed into array
     //need space for 1 more than max arguments because we need to store NULL at the end
     char *commandArguments[MAX_ARGUMENT_COUNT + 1];
@@ -276,7 +344,7 @@ int executeCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLe
             break;
         //child process executing command
         case 0:
-            childProcessExecuteCommand(commandLineBuffer);
+            childProcessExecuteCommand(commandLineBuffer, bufferLength);
             //should not reach here, because childProcessExecuteCommand exits, but we need return
             //statement so compiler doesn't complain
             return status;
