@@ -257,16 +257,19 @@ void expandVariables(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int buffer
     sprintf(pidString, "%ld", (long)getpid());
     int pidStringLength = strlen(pidString);
 
+    //copy all the chars from commandLineBuffer into expanded version, while checking for $$ and expanding it to pid
     for(sourceIndex = 0; sourceIndex < bufferLength && destIndex < COMMAND_LINE_MAX_LENGTH - 1; ++sourceIndex){
         char currentChar = commandLineBuffer[sourceIndex];
+        //if the current character is '$' and the previous character was '$', we know we need to expand it
         if(currentChar == '$' && previousCharWasDollarSign == TRUE){
-            //we need to erase the previous dollar sign
+            //we need to erase the previous dollar sign, so back to previous index
             destIndex--;
             int pidStringIndex;
             //copy pid string to expanded variables, overwriting the previous $ that we have already written
             for(pidStringIndex = 0; pidStringIndex < pidStringLength; ++pidStringIndex){
                 char pidChar = pidString[pidStringIndex];
                 commandLineBufferExpanded[destIndex] = pidChar;
+                //increase destination index, since we added a character
                 destIndex++;
             }
             //reset if previous char was dollar sign, because we need to be able to expand
@@ -297,7 +300,7 @@ void expandVariables(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int buffer
 
 //Executes parses command in commandLineBuffer and executes in foreground for child process
 void childProcessExecuteCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength){
-    //expand $$ to pid in commandLineBuffec
+    //expand all '$$'' to pid in commandLineBuffec
     expandVariables(commandLineBuffer, bufferLength);
 
     //initialize variable to store commands in commandLineBuffer parsed into array
