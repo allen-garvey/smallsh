@@ -24,6 +24,8 @@
 #include <sys/types.h>
 //for waitpid
 #include <sys/wait.h>
+//for handling interrupts
+#include <signal.h>
 
 /**
 * Constants
@@ -44,6 +46,53 @@ typedef int BOOL;
 //members of BOOL type
 #define TRUE 1
 #define FALSE 0
+
+
+/*************************************
+* Handling interrupts
+**************************************/
+//global variable storing the pid of the current foreground process
+//needs to be global variable, because there is no other way for the interrupt
+//handler to get access to this pid
+//-1 represents there is no foregroundPid
+pid_t foregroundPid;
+
+//handles action for when user presses control-c when foreground process is running-
+//it will kill that process and print a message saying so
+//based on CS344 lecture 13 slides
+void interruptHandler(int signalNum){
+    //don't do anything if there is no foreground process running
+    if(foregroundPid == -1){
+        puts("No foreground process running");
+        return;
+    }
+    //print message that we are terminating process, and print signalNum as well
+    printf("Terminated by signal %d\n", signalNum);
+    //must be foreground process, so send kill signal
+    //based on: http://stackoverflow.com/questions/6501522/how-to-kill-a-child-process-by-the-parent-process
+    kill(foregroundPid, SIGKILL);
+    //reset foregroundPid, so we don't try to kill it multiple times
+    foregroundPid = -1;
+}
+
+//called at the beginning of the program, it sets interruptHandler() to be called
+//when user enters control-c
+void initializeInterruptHandler(){
+    //initialize foregroundPid to -1, because nothing should be happening now
+    foregroundPid = -1;
+
+    //struct to store signal action data
+    struct sigaction act;
+    //set function to be called on interrupt
+    act.sa_handler = interruptHandler;
+    act.sa_flags = 0;
+    //initialize struct masks
+    sigfillset(&(act.sa_mask));
+
+    //set action on interrupt to use our struct
+    sigaction(SIGINT, &act, NULL);
+}
+
 
 
 /*************************************
@@ -355,7 +404,11 @@ int executeCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLe
         //parent process
         //wait for child to finish executing and return result
         default:
+            //set foregroundPid so interrupt (control-c) will end it
+            foregroundPid = processId;
             endId = waitpid(processId, &status, 0);
+            //clear foregroundPid, since the process has finished
+            foregroundPid = -1;
             //check for error calling waitpid
             if(endId == -1){
                 printf("Error calling waitpid for %s\n", commandLineBuffer);
@@ -378,6 +431,9 @@ int executeCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLe
 * Main function
 */
 int main(int argc, char const *argv[]){
+    //initialize interrupt (control-c) handler
+    initializeInterruptHandler();
+
     //initialize variable to hold user input
     char commandLineBuffer[COMMAND_LINE_MAX_LENGTH];
     //initialize variable to hold return status code from running a command
