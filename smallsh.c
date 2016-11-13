@@ -66,11 +66,10 @@ void interruptHandler(int signalNum){
         puts("No foreground process running");
         return;
     }
-    //print message that we are terminating process, and print signalNum as well
-    printf("Terminated by signal %d\n", signalNum);
-    //must be foreground process, so send kill signal
+    //must be foreground process, so send interrupt signal
     //based on: http://stackoverflow.com/questions/6501522/how-to-kill-a-child-process-by-the-parent-process
-    kill(foregroundPid, SIGKILL);
+    //and http://www.csl.mtu.edu/cs4411.ck/www/NOTES/signal/kill.html
+    kill(foregroundPid, SIGINT);
     //reset foregroundPid, so we don't try to kill it multiple times
     foregroundPid = -1;
 }
@@ -155,7 +154,15 @@ int isCommandCD(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLengt
 //returns new status code which should always be 0
 //since status command should never fail
 int printStatus(int returnStatusCode){
-	printf("exit value %d\n", returnStatusCode);
+    //check to see if status code indicates process was interrupted
+    if(WTERMSIG(returnStatusCode) == SIGINT){
+        //print message that we are terminating process, and print signalNum as well,
+        //which is what is stored in returnStatusCode
+        printf("Terminated by signal %d\n", returnStatusCode);
+    }
+    else{
+        printf("exit value %d\n", returnStatusCode);
+    }
     return 0;
 }
 
@@ -409,16 +416,22 @@ int executeCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLe
             endId = waitpid(processId, &status, 0);
             //clear foregroundPid, since the process has finished
             foregroundPid = -1;
-            //check for error calling waitpid
-            if(endId == -1){
-                printf("Error calling waitpid for %s\n", commandLineBuffer);
-                return 1;
+            //if there was an error calling waitpid
+            //endId will be -1, however this will also happen if foreground process is interrupted,
+            //so there is no need to do anything here, as we will just get false positives
+
+
+            //check status for signal
+            //https://support.sas.com/documentation/onlinedoc/sasc/doc/lr2/waitpid.htm#statInfo
+            //check if process stopped by interrupt
+            //and print the status if so - status will be signal number in this case
+            if(WTERMSIG(status) == SIGINT){
+                printStatus(status);
             }
             //examine status - 0 means success, other values mean there was an error or 
             //process was interrupted
             //so normalize it for return value
-            //https://support.sas.com/documentation/onlinedoc/sasc/doc/lr2/waitpid.htm#statInfo
-            if(status != 0){
+            else if(status != 0){
                 status = 1;
             }
             return status;
