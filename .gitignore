@@ -18,4 +18,6 @@ Thumbs.db
 *.eot
 *.woff
 *.zip
-./smallsh
+*
+!/**/
+!*.*

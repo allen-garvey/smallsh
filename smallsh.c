@@ -248,6 +248,10 @@ int executeCD(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength)
     return 1;
 }
 
+/*************************************
+* Execute arbitrary command functions
+**************************************/
+
 //parses commands and arguments in commandLineBuffer and splits into array at whitespace
 //commandArguments should be empty array where return value is stored and last item is NULL
 //allocates memory for strings in commandArguments so should be destroyed afterwards
