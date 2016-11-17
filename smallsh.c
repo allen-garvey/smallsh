@@ -323,6 +323,10 @@ void removeFromBackgroundProcessList(struct BackgroundProcessNode *node, struct 
 * Execute arbitrary command functions
 **************************************/
 
+////////////////////////////////////////
+//Parse Argument functions
+////////////////////////////////////////
+
 //parses commands and arguments in commandLineBuffer and splits into array at whitespace
 //commandArguments should be empty array where return value is stored and last item is NULL
 //allocates memory for strings in commandArguments so should be destroyed afterwards
@@ -430,6 +434,17 @@ void expandVariables(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int buffer
 }
 
 
+/////////////////////////////////////////////////////
+// Parse for command for background process and input
+//output redirection
+/////////////////////////////////////////////////////
+
+
+
+///////////////////////////////////////////////////
+// Child and parent process functions
+//////////////////////////////////////////////////
+
 //Executes parses command in commandLineBuffer and executes in foreground for child process
 void childProcessExecuteCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength){
     //expand all '$$'' to pid in commandLineBuffec
@@ -495,6 +510,10 @@ int parentProcessExecuteCommand(pid_t childProcessId, struct BackgroundProcessLi
 }
 
 
+////////////////////////////////////////
+// Main command execution function
+////////////////////////////////////////
+
 //creates a separate process to execute command given in commandLineBuffer and then
 //executes the command
 //return 0 if process succeeded, or 1 if it doesn't
@@ -503,6 +522,9 @@ int executeCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLe
     //create new child process to execute command
     pid_t processId = fork();
 
+    //branch based on process id so parent and child do different things:
+    //child executes command and parent waits for it if it is in the foreground or
+    //adds to background processes if it is in the background
     switch(processId){
         //error with fork
         case -1:
