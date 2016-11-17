@@ -439,6 +439,32 @@ void expandVariables(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int buffer
 //output redirection
 /////////////////////////////////////////////////////
 
+//determines if command ends with '&' so that command should run in background
+//also erases ending '&' if there is one with null chars so it will not be executed
+BOOL shouldExecuteInBackground(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength){
+    int i;
+    //start at end of command, ignoring whitespace to find first non-whitespace character
+    //if that character is '&' delete it and return true, otherwise return false
+    for (i = bufferLength -1; i >= 0; --i){
+        //ignore trailing whitespace
+        if(isspace(commandLineBuffer[i])){
+            continue;
+        }
+        //'&' found at end of the string
+        if(commandLineBuffer[i] == '&'){
+            //erase character from string
+            commandLineBuffer[i] = '\0';
+            return TRUE;
+        }
+        //first non-whitespace character was found and it is not '&'
+        else{
+            break;
+        }
+    }
+    //'&' not found
+    return FALSE;
+}
+
 
 
 ///////////////////////////////////////////////////
@@ -480,7 +506,9 @@ void childProcessExecuteCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH],
 //adding background process to list of background processes if it is to execute in background
 //returns status code from child in foreground after finishes executing, or 0 if child is started in background
 //childProcessId is child process id from fork()
-int parentProcessExecuteCommand(pid_t childProcessId, struct BackgroundProcessList *backgroundProcessList){
+int parentProcessExecuteCommand(pid_t childProcessId, struct BackgroundProcessList *backgroundProcessList, BOOL isBackgroundCommand){
+    //run command in foreground, so wait for it to finish
+    if(isBackgroundCommand == FALSE){ 
         //create variable to store return value from child process
         int status = 0;
         //set global foregroundPid so interrupt (control-c) will end it
@@ -507,6 +535,16 @@ int parentProcessExecuteCommand(pid_t childProcessId, struct BackgroundProcessLi
             status = 1;
         }
         return status;
+    }
+    //command is background process
+    //so just add to background processes and return immediately
+    else{
+        //print pid of child process
+        //http://stackoverflow.com/questions/20533606/what-is-the-correct-printf-specifier-for-printing-pid-t
+        printf("background pid is %ld\n", (long) childProcessId);
+        addToBackgroundProcessList(childProcessId, backgroundProcessList);
+        return 0;
+    }
 }
 
 
@@ -519,6 +557,8 @@ int parentProcessExecuteCommand(pid_t childProcessId, struct BackgroundProcessLi
 //return 0 if process succeeded, or 1 if it doesn't
 //based on: https://support.sas.com/documentation/onlinedoc/sasc/doc/lr2/waitpid.htm
 int executeCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength, struct BackgroundProcessList *backgroundProcessList){
+    //find out if command should be executed in background
+    BOOL isBackgroundCommand = shouldExecuteInBackground(commandLineBuffer, bufferLength);
     //create new child process to execute command
     pid_t processId = fork();
 
@@ -542,11 +582,63 @@ int executeCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLe
         //wait for child to finish executing (if done in foreground) and return result
         //otherwise just add to background processes and return 0
         default:
-            return parentProcessExecuteCommand(processId, backgroundProcessList);
+            return parentProcessExecuteCommand(processId, backgroundProcessList, isBackgroundCommand);
             break;
     }
 }
 
+
+///////////////////////////////////////////////////////////
+// Background process commands
+///////////////////////////////////////////////////////////
+
+//returns true if process has either exited normally or topped by signal
+//false otherwise
+//status is the int passed in from waitpid
+//based on: https://linux.die.net/man/2/waitpid
+BOOL hasProcessStopped(pid_t childProcessId, pid_t waitpidResult, int status){
+    //wait pid will return pid_t equal to child process if process has stopped
+    if(childProcessId != waitpidResult){
+        return FALSE;
+    }
+    if(WIFEXITED(status) || WIFSIGNALED(status)){
+        return TRUE;
+    }
+    return FALSE;
+}
+
+//prints out status of completed background commands
+void printBackgroundProcessStatus(struct BackgroundProcessList *backgroundProcessList){
+
+}
+
+
+//kill all background processes
+//and free memory from background process list
+//called before program exits
+void cleanUpBackgroundProcesses(struct BackgroundProcessList *backgroundProcessList){
+    struct BackgroundProcessNode *node = backgroundProcessList->head;
+    //initialize variable for status information in waitpid
+    int status = 0;
+    //iterate through all background processes, stopping them and freeing memory from the list
+    while(node != NULL){
+        //check process to see if still running
+        pid_t waitpidResult = waitpid(node->processId, &status, WNOHANG);
+        //kill background process if still running
+        //based on: http://stackoverflow.com/questions/6501522/how-to-kill-a-child-process-by-the-parent-process
+        if(!hasProcessStopped(node->processId, waitpidResult, status)){
+            //send kill signal
+            kill(node->processId, SIGKILL);
+        }
+
+        //duplicate node, so we can store pointer to next node
+        //before deleting current node
+        struct BackgroundProcessNode *garbage = node;
+        node = node->next;
+        //free memory for current node
+        removeFromBackgroundProcessList(garbage, backgroundProcessList);
+    }
+}
 
 /**
 * Main function
@@ -597,9 +689,11 @@ int main(int argc, char const *argv[]){
     }
 
     //if we're here, user entered 'exit'
-    //kill all child processes
-    //based on: http://stackoverflow.com/questions/6501522/how-to-kill-a-child-process-by-the-parent-process
-    //kill(processId, SIGKILL);
+    //kill all background child processes
+    //and free memory from list
+    //don't need to worry about foreground process, since if we are here, there isn't one currently running
+    cleanUpBackgroundProcesses(&backgroundProcessList);
+
 
 	return 0;
 }
