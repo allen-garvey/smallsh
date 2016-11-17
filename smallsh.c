@@ -41,6 +41,9 @@
 //character used at start of a line to define a comment
 #define COMMENT_CHAR '#'
 
+//used to represent uninitialized foreground pid
+#define NULL_FOREGROUND_PID -1
+
 //create custom bool class, since c99 is required for stdbool.h
 typedef int BOOL;
 //members of BOOL type
@@ -51,10 +54,16 @@ typedef int BOOL;
 /*************************************
 * Handling interrupts
 **************************************/
+//prototype for function so we can use it for interrupts
+BOOL hasProcessStopped(pid_t childProcessId, pid_t waitpidResult, int status);
+int printStatus(int returnStatusCode);
+
 //global variable storing the pid of the current foreground process
 //needs to be global variable, because there is no other way for the interrupt
 //handler to get access to this pid
-//-1 represents there is no foregroundPid
+//NULL_FOREGROUND_PID represents there is no foregroundPid
+//because no commands have been run yet, or last foreground command was built in command
+//otherwise stores pid of last run foreground command
 pid_t foregroundPid;
 
 //handles action for when user presses control-c when foreground process is running-
@@ -62,23 +71,30 @@ pid_t foregroundPid;
 //based on CS344 lecture 13 slides
 void interruptHandler(int signalNum){
     //don't do anything if there is no foreground process running
-    if(foregroundPid == -1){
-        puts("No foreground process running");
+    //first check if foreground pid is even initialized
+    if(foregroundPid == NULL_FOREGROUND_PID){
         return;
     }
-    //must be foreground process, so send interrupt signal
+    //check if process has stopped
+    int result = 0;
+    pid_t waitpidResult = waitpid(foregroundPid, &result, WNOHANG);
+    if(hasProcessStopped(foregroundPid, waitpidResult, result)){
+        return;
+    }
+    //must have foreground process, so send interrupt signal
     //based on: http://stackoverflow.com/questions/6501522/how-to-kill-a-child-process-by-the-parent-process
     //and http://www.csl.mtu.edu/cs4411.ck/www/NOTES/signal/kill.html
     kill(foregroundPid, SIGINT);
-    //reset foregroundPid, so we don't try to kill it multiple times
-    foregroundPid = -1;
+    //print the status so that it will say process was terminated
+    //argument value is bogus, as it won't be used
+    printStatus(0);
 }
 
 //called at the beginning of the program, it sets interruptHandler() to be called
 //when user enters control-c
 void initializeInterruptHandler(){
     //initialize foregroundPid to -1, because nothing should be happening now
-    foregroundPid = -1;
+    foregroundPid = NULL_FOREGROUND_PID;
 
     //struct to store signal action data
     struct sigaction act;
@@ -154,11 +170,22 @@ int isCommandCD(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLengt
 //returns new status code which should always be 0
 //since status command should never fail
 int printStatus(int returnStatusCode){
-    //check to see if status code indicates process was interrupted
-    if(WTERMSIG(returnStatusCode) == SIGINT){
+    //check to see if any commands have been run, by checking if foregroundpid is initialized
+    if(foregroundPid == NULL_FOREGROUND_PID){
+        printf("exit value %d\n", returnStatusCode);
+        return 0;
+    }
+    //get status of last run foreground command
+    int status;
+    waitpid(foregroundPid, &status, WNOHANG);
+    //check to see if status code indicates process stopped by signal
+    //https://linux.die.net/man/3/waitpid
+    if(WIFSIGNALED(status)){
         //print message that we are terminating process, and print signalNum as well,
-        //which is what is stored in returnStatusCode
-        printf("Terminated by signal %d\n", returnStatusCode);
+        printf("terminated by signal %d\n", WTERMSIG(status));
+    }
+    else if(WIFSTOPPED(status)){
+        printf("terminated by signal %d\n", WSTOPSIG(status));
     }
     else{
         printf("exit value %d\n", returnStatusCode);
@@ -515,7 +542,7 @@ int parentProcessExecuteCommand(pid_t childProcessId, struct BackgroundProcessLi
         foregroundPid = childProcessId;
         pid_t endId = waitpid(childProcessId, &status, 0);
         //clear foregroundPid, since the process has finished
-        foregroundPid = -1;
+        //foregroundPid = -1;
         //if there was an error calling waitpid
         //endId will be -1, however this will also happen if foreground process is interrupted,
         //so there is no need to do anything here, as we will just get false positives
@@ -597,8 +624,8 @@ int executeCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLe
 //status is the int passed in from waitpid
 //based on: https://linux.die.net/man/2/waitpid
 BOOL hasProcessStopped(pid_t childProcessId, pid_t waitpidResult, int status){
-    //wait pid will return pid_t equal to child process if process has stopped
-    if(childProcessId != waitpidResult){
+    //wait pid result will be 0 if no status is available
+    if(waitpidResult == 0){
         return FALSE;
     }
     if(WIFEXITED(status) || WIFSIGNALED(status)){
@@ -715,9 +742,15 @@ int main(int argc, char const *argv[]){
         //check for 'status' command to print status
         else if(strcmp(commandLineBuffer, "status") == 0){
             returnStatusCode = printStatus(returnStatusCode);
+            //built in commands reset foreground pid
+            //so printStatus works correctly
+            foregroundPid = NULL_FOREGROUND_PID;
         }
         else if(isCommandCD(commandLineBuffer, bufferLength) == 1){
             returnStatusCode = executeCD(commandLineBuffer, bufferLength);
+            //built in commands reset foreground pid
+            //so printStatus works correctly
+            foregroundPid = NULL_FOREGROUND_PID;
         }
         else{
             returnStatusCode = executeCommand(commandLineBuffer, bufferLength, &backgroundProcessList);
