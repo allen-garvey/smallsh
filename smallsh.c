@@ -365,6 +365,7 @@ void destroyCommandArguments(char *commandArguments[MAX_ARGUMENT_COUNT + 1], int
     while(i < argumentCount && (currentArgument = commandArguments[i]) != NULL ){
         //free memory
         free(currentArgument);
+        i++;
     }
 }
 
