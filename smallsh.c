@@ -607,9 +607,45 @@ BOOL hasProcessStopped(pid_t childProcessId, pid_t waitpidResult, int status){
     return FALSE;
 }
 
-//prints out status of completed background commands
+//prints out status of completed background processes
+//and removes completed background processes from the list
 void printBackgroundProcessStatus(struct BackgroundProcessList *backgroundProcessList){
+    struct BackgroundProcessNode *node = backgroundProcessList->head;
+    //initialize variable for status information in waitpid
+    int status = 0;
+    //iterate through all background processes, stopping them and freeing memory from the list
+    while(node != NULL){
+        //check process to see if still running
+        pid_t waitpidResult = waitpid(node->processId, &status, WNOHANG);
+        //don't do anything if process is still running
+        if(!hasProcessStopped(node->processId, waitpidResult, status)){
+            //process still running, continue with next node
+            node = node->next;
+            continue;
+        }
+        //print out exit status of completed process in format
+        //background pid 4923 is done: exit value 0
+        //or
+        //background pid 4941 is done: terminated by signal 15
+        //based on: https://linux.die.net/man/3/waitpid
+        //check for exiting normally
+        if(WIFEXITED(status)){
+            printf("background pid %ld is done: exit value %d\n", (long) node->processId, WEXITSTATUS(status));
+        }
+        //otherwise killed by signal
+        else{
+            printf("background pid %ld is done: terminated by signal %d\n", (long) node->processId, WTERMSIG(status));
+        }
 
+
+        //remove completed process from the list
+        //duplicate node, so we can store pointer to next node
+        //before deleting current node
+        struct BackgroundProcessNode *garbage = node;
+        node = node->next;
+        //free memory for current node
+        removeFromBackgroundProcessList(garbage, backgroundProcessList);
+    }
 }
 
 
@@ -686,6 +722,8 @@ int main(int argc, char const *argv[]){
         else{
             returnStatusCode = executeCommand(commandLineBuffer, bufferLength, &backgroundProcessList);
         }
+        //check status of background processes and print their status if they have completed
+        printBackgroundProcessStatus(&backgroundProcessList);
     }
 
     //if we're here, user entered 'exit'
