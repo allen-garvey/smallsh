@@ -248,6 +248,77 @@ int executeCD(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength)
     return 1;
 }
 
+/**************************************************
+* Linked list for background processes functions
+***************************************************/
+
+//node in linked list - stores background process ids
+//has pointers to both next and previous so processes that finish
+//can be easily removed
+struct BackgroundProcessNode{
+    pid_t processId;
+    struct BackgroundProcessNode *previous;
+    struct BackgroundProcessNode *next;
+};
+
+//linked list to store process ids of background processes
+//works like a stack, with new background pids added to the front
+struct BackgroundProcessList{
+  struct BackgroundProcessNode *head;
+};
+
+//initialize linked list with null for first item
+//since it is empty
+void initializeBackgroundProcessList(struct BackgroundProcessList *backgroundProcessList){
+    backgroundProcessList->head = NULL;
+}
+
+//adds pid to front of list
+void addToBackgroundProcessList(pid_t pid, struct BackgroundProcessList *backgroundProcessList){
+    //allocate memory
+    struct BackgroundProcessNode *node = malloc(sizeof(struct BackgroundProcessNode));
+    //check it succeeded
+    assert(node != NULL);
+    //save pid
+    node->processId = pid;
+    //will be first item, so previous is null
+    node->previous = NULL;
+    //set next to null, will be changed if there should be something next
+    node->next = NULL;
+    //insert into list
+    //if head is null, it means it is empty, so just set head
+    //otherwise set the previous head's previous pointer to the new head of the list
+    //and the new node's next pointer to 
+    if(backgroundProcessList->head != NULL){
+        backgroundProcessList->head->previous = node;
+        node->next = backgroundProcessList->head;
+    }
+    //set new head of the list
+    backgroundProcessList->head = node;
+}
+
+//remove node from the list
+//used when background process completes
+void removeFromBackgroundProcessList(struct BackgroundProcessNode *node, struct BackgroundProcessList *backgroundProcessList){
+    //check if node is head of list, since then don't need to reassign previous
+    //and need to reassign head
+    if(node == backgroundProcessList->head){
+        backgroundProcessList->head = node->next;
+    }
+    //need to reassign previous node's next pointer
+    else{
+        node->previous->next = node->next;
+    }
+    //check to see if there is next node, and if so reassign it
+    //to the previous node
+    if(node->next != NULL){
+        node->next->previous = node->previous;
+    }
+    //free memory from node
+    free(node);
+}
+
+
 /*************************************
 * Execute arbitrary command functions
 **************************************/
@@ -388,17 +459,49 @@ void childProcessExecuteCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH],
     exit(status);
 }
 
+//action that parent takes while child process is executing command
+//involves either waiting for child process to finish executing in the foreground, or 
+//adding background process to list of background processes if it is to execute in background
+//returns status code from child in foreground after finishes executing, or 0 if child is started in background
+//childProcessId is child process id from fork()
+int parentProcessExecuteCommand(pid_t childProcessId, struct BackgroundProcessList *backgroundProcessList){
+        //create variable to store return value from child process
+        int status = 0;
+        //set global foregroundPid so interrupt (control-c) will end it
+        foregroundPid = childProcessId;
+        pid_t endId = waitpid(childProcessId, &status, 0);
+        //clear foregroundPid, since the process has finished
+        foregroundPid = -1;
+        //if there was an error calling waitpid
+        //endId will be -1, however this will also happen if foreground process is interrupted,
+        //so there is no need to do anything here, as we will just get false positives
+
+
+        //check status for signal
+        //https://support.sas.com/documentation/onlinedoc/sasc/doc/lr2/waitpid.htm#statInfo
+        //check if process stopped by interrupt
+        //and print the status if so - status will be signal number in this case
+        if(WTERMSIG(status) == SIGINT){
+            printStatus(status);
+        }
+        //examine status - 0 means success, other values mean there was an error or 
+        //process was interrupted
+        //so normalize it for return value
+        else if(status != 0){
+            status = 1;
+        }
+        return status;
+}
+
 
 //creates a separate process to execute command given in commandLineBuffer and then
 //executes the command
 //return 0 if process succeeded, or 1 if it doesn't
 //based on: https://support.sas.com/documentation/onlinedoc/sasc/doc/lr2/waitpid.htm
-int executeCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength){
+int executeCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength, struct BackgroundProcessList *backgroundProcessList){
+    //create new child process to execute command
     pid_t processId = fork();
-    //create variable to store return value from child process, and return value from exec
-    int status;
-    //stores result from waitpid - can't declare variable in switch statement
-    pid_t endId;
+
     switch(processId){
         //error with fork
         case -1:
@@ -410,35 +513,13 @@ int executeCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLe
             childProcessExecuteCommand(commandLineBuffer, bufferLength);
             //should not reach here, because childProcessExecuteCommand exits, but we need return
             //statement so compiler doesn't complain
-            return status;
+            return 0;
             break;
         //parent process
-        //wait for child to finish executing and return result
+        //wait for child to finish executing (if done in foreground) and return result
+        //otherwise just add to background processes and return 0
         default:
-            //set foregroundPid so interrupt (control-c) will end it
-            foregroundPid = processId;
-            endId = waitpid(processId, &status, 0);
-            //clear foregroundPid, since the process has finished
-            foregroundPid = -1;
-            //if there was an error calling waitpid
-            //endId will be -1, however this will also happen if foreground process is interrupted,
-            //so there is no need to do anything here, as we will just get false positives
-
-
-            //check status for signal
-            //https://support.sas.com/documentation/onlinedoc/sasc/doc/lr2/waitpid.htm#statInfo
-            //check if process stopped by interrupt
-            //and print the status if so - status will be signal number in this case
-            if(WTERMSIG(status) == SIGINT){
-                printStatus(status);
-            }
-            //examine status - 0 means success, other values mean there was an error or 
-            //process was interrupted
-            //so normalize it for return value
-            else if(status != 0){
-                status = 1;
-            }
-            return status;
+            return parentProcessExecuteCommand(processId, backgroundProcessList);
             break;
     }
 }
@@ -455,6 +536,9 @@ int main(int argc, char const *argv[]){
     char commandLineBuffer[COMMAND_LINE_MAX_LENGTH];
     //initialize variable to hold return status code from running a command
     int returnStatusCode = 0;
+    //initialize list to hold background process information
+    struct BackgroundProcessList backgroundProcessList;
+    initializeBackgroundProcessList(&backgroundProcessList);
 	//main loop to get user input and execute commands
     //loops until user types 'exit' to exit shell
     while(1){
@@ -485,7 +569,7 @@ int main(int argc, char const *argv[]){
             returnStatusCode = executeCD(commandLineBuffer, bufferLength);
         }
         else{
-            returnStatusCode = executeCommand(commandLineBuffer, bufferLength);
+            returnStatusCode = executeCommand(commandLineBuffer, bufferLength, &backgroundProcessList);
         }
     }
 
