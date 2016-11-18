@@ -562,7 +562,49 @@ void redirectOutput(char *commandArguments[MAX_ARGUMENT_COUNT + 1], BOOL isBackg
     if(outputFileName != NULL && isOutputFileNameAllocated == TRUE){
         free(outputFileName);
     }
+}
 
+//used in child process to redirect standard input
+void redirectInput(char *commandArguments[MAX_ARGUMENT_COUNT + 1], BOOL isBackgroundCommand){
+    //get input redirection if there is any
+    char *inputFileName = parseRedirection(commandArguments, "<");
+    //need to keep track if inputFileName is allocated, so we know if we have to free it
+    //won't be allocated if we manually set to /dev/null
+    BOOL isInputFileNameAllocated = TRUE;
+    //background commands with no input redirection get sent to /dev/null
+    //based on: http://stackoverflow.com/questions/14846768/in-c-how-do-i-redirect-stdout-fileno-to-dev-null-using-dup2-and-then-redirect
+    if(inputFileName == NULL && isBackgroundCommand == TRUE){
+        inputFileName = "/dev/null";
+        //set flag to false, so we don't try to free this later
+        isInputFileNameAllocated = FALSE;
+    }
+    
+    //check for input redirection
+    if(inputFileName != NULL){
+        //based on Lecture 12 slides
+        //attempt to redirect standard input to filename
+        int fileDescriptor = open(inputFileName, O_RDONLY);
+        //check that we were able to open the file
+        //-1 means there was an error trying to do this
+        if(fileDescriptor == -1){
+            printf("cannot open %s for input\n", inputFileName);
+            exit(1);
+        }
+        //redirect standard input '0' to the file we just opened
+        fileDescriptor = dup2(fileDescriptor, 0);
+        //check again for errors
+        if(fileDescriptor == -1){
+            printf("error redirecting standard input to %s\n", inputFileName);
+            exit(1);
+        }
+    }
+    //free inputFileName, if it was allocated
+    //need to check if null and allocated because if we manually set it to "/dev/null"
+    //it won't be allocated, or if no redirection was given it won't be allocated
+    //since we don't need it anymore
+    if(inputFileName != NULL && isInputFileNameAllocated == TRUE){
+        free(inputFileName);
+    }
 }
 
 //Executes parses command in commandLineBuffer and executes in foreground for child process
@@ -581,6 +623,8 @@ void childProcessExecuteCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH],
     }
     //redirect standard output as necessary
     redirectOutput(commandArguments, isBackgroundCommand);
+    //redirect standard input as necessary
+    redirectInput(commandArguments, isBackgroundCommand);
 
     //first item is commandArguments is program name, and we need to pass it again in the arguments
     int status = execvp(commandArguments[0], commandArguments);
