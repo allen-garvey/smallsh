@@ -833,6 +833,11 @@ int main(int argc, char const *argv[]){
 	//main loop to get user input and execute commands
     //loops until user types 'exit' to exit shell
     while(1){
+        //check status of background processes and print their status if they have completed
+        //need to be first instead of last, so background status can be printed after blank lines
+        //or comments
+        printBackgroundProcessStatus(&backgroundProcessList);
+
     	//write user prompt
     	writePrompt();
         //get user input for command
@@ -875,8 +880,6 @@ int main(int argc, char const *argv[]){
             //if we're here, we are executing user command
             returnStatusCode = executeCommand(commandLineBuffer, bufferLength, &backgroundProcessList);
         }
-        //check status of background processes and print their status if they have completed
-        printBackgroundProcessStatus(&backgroundProcessList);
     }
 
     //if we're here, user entered 'exit'
