@@ -378,26 +378,27 @@ int parseCommandArguments(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], char 
     return i;
 }
 
-//checks arguments for "> <filename>" and returns the string matching "<filename>"
-//also replaces ">" and "<filename>" with NULL in arguments so they will not be executed
-//returns NULL if there is no output direction
-char * parseOutputRedirection(char *commandArguments[MAX_ARGUMENT_COUNT + 1]){
-    //if last character was '>' the next string is the filename
-    BOOL previousArgWasOuputToken = FALSE;
+//checks arguments for "token <filename>" and returns the string matching "<filename>"
+//also replaces "token" and "<filename>" with NULL in arguments so they will not be executed
+//returns NULL if there is no redirection
+//'>' is token for output redirection, '<' is token for input redirection
+char * parseRedirection(char *commandArguments[MAX_ARGUMENT_COUNT + 1], char *token){
+    //if last character was token the next string is the filename
+    BOOL previousArgWasToken = FALSE;
     //iterate through arguments until we reach null, since that indicates the end of the arguments
     int i = 0;
     char *currentArgument;
     while((currentArgument = commandArguments[i]) != NULL){
-        //if previous argument was '>' this should be the output filename
-        if(previousArgWasOuputToken == TRUE){
+        //if previous argument was token this should be the redirection filename
+        if(previousArgWasToken == TRUE){
             //replace value in array with NULL, so won't be executed
             commandArguments[i] = NULL;
             return currentArgument;
         }
-        //if output token, free string and replace with null
+        //if token, free string and replace with null
         //and set flag
-        else if(strcmp(currentArgument, ">") == 0){
-            previousArgWasOuputToken = TRUE;
+        else if(strcmp(currentArgument, token) == 0){
+            previousArgWasToken = TRUE;
             //erase from arguments so it won't be executed
             commandArguments[i] = NULL;
             //free memory allocated for ">"
@@ -535,7 +536,7 @@ void childProcessExecuteCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH],
         exit(0);
     }
     //get output redirection if there is any
-    char *outputFileName = parseOutputRedirection(commandArguments);
+    char *outputFileName = parseRedirection(commandArguments, ">");
     //need to keep track if outputFileName is allocated, so we know if we have to free it
     //won't be allocated if we manually set to /dev/null
     BOOL isOutputFileNameAllocated = TRUE;
