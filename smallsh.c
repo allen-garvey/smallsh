@@ -607,6 +607,35 @@ void redirectInput(char *commandArguments[MAX_ARGUMENT_COUNT + 1], BOOL isBackgr
     }
 }
 
+//prints error status if command fails, and is not a background command
+void printExecutionError(int errorCode, char *commandName, BOOL isBackgroundCommand){
+    //don't printout errors for background commands
+    if(isBackgroundCommand == TRUE){
+        return;
+    }
+    //print error based on errno
+    //based on: https://linux.die.net/man/2/execve
+    switch(errorCode){
+        //permissions error for command
+        case EACCES:
+            printf("%s: execute permission denied\n", commandName);
+            break;
+        //file doesn't exist
+        case ENOENT:
+            printf("%s: no such file or directory\n", commandName);
+            break;
+        //problem with the executable file
+        case ENOEXEC:
+            printf("%s: could not be executed\n", commandName);
+            break;
+        //unspecified error
+        default:
+            printf("There was an error with trying to run %s\n", commandName);
+            break;
+    }
+
+}
+
 //Executes parses command in commandLineBuffer and executes in foreground for child process
 void childProcessExecuteCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength, BOOL isBackgroundCommand){
     //expand all '$$'' to pid in commandLineBuffec
@@ -628,16 +657,19 @@ void childProcessExecuteCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH],
 
     //first item is commandArguments is program name, and we need to pass it again in the arguments
     int status = execvp(commandArguments[0], commandArguments);
-    //free memory allocated for commandArguments
-    destroyCommandArguments(commandArguments, argumentCount);
     //check for error and normalize status to be either 1 for error
     //or 0 for finished successfully
     if(status == -1){
         status = 1;
+        //error status stored in errno, so printout message based on this if not background command
+        //(we have already checked that commandArguments has at least length one, so no need to check first)
+        printExecutionError(errno, commandArguments[0], isBackgroundCommand);
     }
     else{
         status = 0;
     }
+    //free memory allocated for commandArguments
+    destroyCommandArguments(commandArguments, argumentCount);
     //close process after exec completes
     exit(status);
 }
