@@ -65,29 +65,28 @@ int printStatus(int returnStatusCode);
 //because no commands have been run yet, or last foreground command was built in command
 //otherwise stores pid of last run foreground command
 pid_t foregroundPid;
+//global variable to store if foreground process stopped by interrupt
+BOOL foregroundInterrupted;
+//global variable to store signal number if foreground command is interrupted
+int foregroundInterruptSignal;
 
 //handles action for when user presses control-c when foreground process is running-
 //it will kill that process and print a message saying so
 //based on CS344 lecture 13 slides
 void interruptHandler(int signalNum){
     //don't do anything if there is no foreground process running
-    //first check if foreground pid is even initialized
-    if(foregroundPid == NULL_FOREGROUND_PID){
+    //check if foreground pid is even initialized or foreground has already been interrupted
+    if(foregroundPid == NULL_FOREGROUND_PID || foregroundInterrupted == TRUE){
         return;
     }
-    //check if process has stopped
-    int result = 0;
-    pid_t waitpidResult = waitpid(foregroundPid, &result, WNOHANG);
-    if(hasProcessStopped(foregroundPid, waitpidResult, result)){
-        return;
-    }
+    
     //must have foreground process, so send interrupt signal
     //based on: http://stackoverflow.com/questions/6501522/how-to-kill-a-child-process-by-the-parent-process
     //and http://www.csl.mtu.edu/cs4411.ck/www/NOTES/signal/kill.html
     kill(foregroundPid, SIGINT);
-    //print the status so that it will say process was terminated
-    //argument value is bogus, as it won't be used
-    printStatus(0);
+    //set flags to show was interrupted
+    foregroundInterrupted = TRUE;
+    foregroundInterruptSignal = signalNum;
 }
 
 //called at the beginning of the program, it sets interruptHandler() to be called
@@ -95,6 +94,8 @@ void interruptHandler(int signalNum){
 void initializeInterruptHandler(){
     //initialize foregroundPid to -1, because nothing should be happening now
     foregroundPid = NULL_FOREGROUND_PID;
+    //initialized foreground interrupted flag to false
+    foregroundInterrupted = FALSE;
 
     //struct to store signal action data
     struct sigaction act;
@@ -170,22 +171,9 @@ int isCommandCD(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLengt
 //returns new status code which should always be 0
 //since status command should never fail
 int printStatus(int returnStatusCode){
-    //check to see if any commands have been run, by checking if foregroundpid is initialized
-    if(foregroundPid == NULL_FOREGROUND_PID){
-        printf("exit value %d\n", returnStatusCode);
-        return 0;
-    }
-    //get status of last run foreground command
-    int status;
-    waitpid(foregroundPid, &status, WNOHANG);
-    //check to see if status code indicates process stopped by signal
-    //https://linux.die.net/man/3/waitpid
-    if(WIFSIGNALED(status)){
-        //print message that we are terminating process, and print signalNum as well,
-        printf("terminated by signal %d\n", WTERMSIG(status));
-    }
-    else if(WIFSTOPPED(status)){
-        printf("terminated by signal %d\n", WSTOPSIG(status));
+    //check if last process was stopped by signal
+    if(foregroundInterrupted == TRUE){
+        printf("terminated by signal %d\n", foregroundInterruptSignal);
     }
     else{
         printf("exit value %d\n", returnStatusCode);
@@ -540,20 +528,19 @@ int parentProcessExecuteCommand(pid_t childProcessId, struct BackgroundProcessLi
         int status = 0;
         //set global foregroundPid so interrupt (control-c) will end it
         foregroundPid = childProcessId;
-        pid_t endId = waitpid(childProcessId, &status, 0);
+        waitpid(childProcessId, &status, 0);
         //clear foregroundPid, since the process has finished
         //foregroundPid = -1;
         //if there was an error calling waitpid
-        //endId will be -1, however this will also happen if foreground process is interrupted,
-        //so there is no need to do anything here, as we will just get false positives
+        //return value will be -1, however this will also happen if foreground process is interrupted,
+        //so there is no need to check this, as we will just get false positives
 
 
-        //check status for signal
-        //https://support.sas.com/documentation/onlinedoc/sasc/doc/lr2/waitpid.htm#statInfo
-        //check if process stopped by interrupt
-        //and print the status if so - status will be signal number in this case
-        if(WTERMSIG(status) == SIGINT){
-            printStatus(status);
+        //check if process interrupted
+        //if so, status is meaningless, since signal number will be used in status
+        if(foregroundInterrupted == TRUE){
+            //0 is meaningless, since signal number will be used
+            printStatus(0);
         }
         //examine status - 0 means success, other values mean there was an error or 
         //process was interrupted
@@ -745,14 +732,21 @@ int main(int argc, char const *argv[]){
             //built in commands reset foreground pid
             //so printStatus works correctly
             foregroundPid = NULL_FOREGROUND_PID;
+            //also reset process interrupted, since built-in commands can't be interrupted
+            foregroundInterrupted = FALSE;
         }
         else if(isCommandCD(commandLineBuffer, bufferLength) == 1){
             returnStatusCode = executeCD(commandLineBuffer, bufferLength);
             //built in commands reset foreground pid
             //so printStatus works correctly
             foregroundPid = NULL_FOREGROUND_PID;
+            //also reset process interrupted, since built-in commands can't be interrupted
+            foregroundInterrupted = FALSE;
         }
         else{
+            //reset foreground interrupted, since nothing has happed yet, so can't be interrupted
+            foregroundInterrupted = FALSE;
+            //if we're here, we are executing user command
             returnStatusCode = executeCommand(commandLineBuffer, bufferLength, &backgroundProcessList);
         }
         //check status of background processes and print their status if they have completed
