@@ -4,7 +4,7 @@ A simple shell interpreter written in C.
 
 ## Dependencies
 
-* gcc 4.8.5
+* gcc 4.4.7 or higher
 * A UNIX/Linux compatible operating system
 
 ## Getting Started
