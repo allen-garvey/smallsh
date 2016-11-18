@@ -698,6 +698,7 @@ int parentProcessExecuteCommand(pid_t childProcessId, struct BackgroundProcessLi
 
         //check if process interrupted
         //if so, status is meaningless, since signal number will be used in status
+        //have to print here, since we can't print in signal handler due to printf not being re-entrant
         if(foregroundInterrupted == TRUE){
             //0 is meaningless, since signal number will be used
             printStatus(0);
