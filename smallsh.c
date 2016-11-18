@@ -773,9 +773,11 @@ BOOL hasProcessStopped(pid_t childProcessId, pid_t waitpidResult, int status){
     if(waitpidResult == 0){
         return FALSE;
     }
+    //if the process has exited, or stopped by signal, it has stopped
     if(WIFEXITED(status) || WIFSIGNALED(status)){
         return TRUE;
     }
+    //process must still be running
     return FALSE;
 }
 
