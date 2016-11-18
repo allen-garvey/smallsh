@@ -521,20 +521,8 @@ BOOL shouldExecuteInBackground(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], 
 // Child and parent process functions
 //////////////////////////////////////////////////
 
-//Executes parses command in commandLineBuffer and executes in foreground for child process
-void childProcessExecuteCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength, BOOL isBackgroundCommand){
-    //expand all '$$'' to pid in commandLineBuffec
-    expandVariables(commandLineBuffer, bufferLength);
-
-    //initialize variable to store commands in commandLineBuffer parsed into array
-    //need space for 1 more than max arguments because we need to store NULL at the end
-    char *commandArguments[MAX_ARGUMENT_COUNT + 1];
-    int argumentCount = parseCommandArguments(commandLineBuffer, commandArguments);
-    //only run command if there is a command to be run
-    if(argumentCount < 1){
-        //no commands (commandLineBuffer was empty of just whitespace), so exit early
-        exit(0);
-    }
+//used in child process to redirect output
+void redirectOutput(char *commandArguments[MAX_ARGUMENT_COUNT + 1], BOOL isBackgroundCommand){
     //get output redirection if there is any
     char *outputFileName = parseRedirection(commandArguments, ">");
     //need to keep track if outputFileName is allocated, so we know if we have to free it
@@ -567,6 +555,32 @@ void childProcessExecuteCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH],
             exit(1);
         }
     }
+    //free outputFileName, if it was allocated
+    //need to check if null and allocated because if we manually set it to "/dev/null"
+    //it won't be allocated, or if no redirection was given it won't be allocated
+    //since we don't need it anymore
+    if(outputFileName != NULL && isOutputFileNameAllocated == TRUE){
+        free(outputFileName);
+    }
+
+}
+
+//Executes parses command in commandLineBuffer and executes in foreground for child process
+void childProcessExecuteCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength, BOOL isBackgroundCommand){
+    //expand all '$$'' to pid in commandLineBuffec
+    expandVariables(commandLineBuffer, bufferLength);
+
+    //initialize variable to store commands in commandLineBuffer parsed into array
+    //need space for 1 more than max arguments because we need to store NULL at the end
+    char *commandArguments[MAX_ARGUMENT_COUNT + 1];
+    int argumentCount = parseCommandArguments(commandLineBuffer, commandArguments);
+    //only run command if there is a command to be run
+    if(argumentCount < 1){
+        //no commands (commandLineBuffer was empty of just whitespace), so exit early
+        exit(0);
+    }
+    //redirect standard output as necessary
+    redirectOutput(commandArguments, isBackgroundCommand);
 
     //first item is commandArguments is program name, and we need to pass it again in the arguments
     int status = execvp(commandArguments[0], commandArguments);
