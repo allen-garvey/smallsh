@@ -76,6 +76,8 @@ int foregroundInterruptSignal;
 //handles action for when user presses control-c when foreground process is running-
 //it will kill that process and print a message saying so
 //based on CS344 lecture 13 slides
+//not allowed to use any functions that are not reentrant, so can only use the functions described
+//here: http://pubs.opengroup.org/onlinepubs/009695399/functions/xsh_chap02_04.html#tag_02_04_04
 void interruptHandler(int signalNum){
     //don't do anything if there is no foreground process running
     //check if foreground pid is even initialized or foreground has already been interrupted
