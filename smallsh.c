@@ -26,6 +26,9 @@
 #include <sys/wait.h>
 //for handling interrupts
 #include <signal.h>
+//for open
+#include <fcntl.h>
+#include <sys/stat.h>
 
 /**
 * Constants
@@ -80,10 +83,10 @@ void interruptHandler(int signalNum){
         return;
     }
     
-    //must have foreground process, so send interrupt signal
+    //must have foreground process, so send it the signal sent to the handler
     //based on: http://stackoverflow.com/questions/6501522/how-to-kill-a-child-process-by-the-parent-process
     //and http://www.csl.mtu.edu/cs4411.ck/www/NOTES/signal/kill.html
-    kill(foregroundPid, SIGINT);
+    kill(foregroundPid, signalNum);
     //set flags to show was interrupted
     foregroundInterrupted = TRUE;
     foregroundInterruptSignal = signalNum;
@@ -375,6 +378,37 @@ int parseCommandArguments(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], char 
     return i;
 }
 
+//checks arguments for "> <filename>" and returns the string matching "<filename>"
+//also replaces ">" and "<filename>" with NULL in arguments so they will not be executed
+//returns NULL if there is no output direction
+char * parseOutputRedirection(char *commandArguments[MAX_ARGUMENT_COUNT + 1]){
+    //if last character was '>' the next string is the filename
+    BOOL previousArgWasOuputToken = FALSE;
+    //iterate through arguments until we reach null, since that indicates the end of the arguments
+    int i = 0;
+    char *currentArgument;
+    while((currentArgument = commandArguments[i]) != NULL){
+        //if previous argument was '>' this should be the output filename
+        if(previousArgWasOuputToken == TRUE){
+            //replace value in array with NULL, so won't be executed
+            commandArguments[i] = NULL;
+            return currentArgument;
+        }
+        //if output token, free string and replace with null
+        //and set flag
+        else if(strcmp(currentArgument, ">") == 0){
+            previousArgWasOuputToken = TRUE;
+            //erase from arguments so it won't be executed
+            commandArguments[i] = NULL;
+            //free memory allocated for ">"
+            free(currentArgument);
+        }
+        i++;
+    }
+    //if we're here there is no output redirection (or redirection symbol but no filename), so return NULL
+    return NULL;
+}
+
 //free space allocated for arguments in commandArguments array
 void destroyCommandArguments(char *commandArguments[MAX_ARGUMENT_COUNT + 1], int argumentCount){
     //initialize variables to hold current array index and current argument to be freed
@@ -487,7 +521,7 @@ BOOL shouldExecuteInBackground(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], 
 //////////////////////////////////////////////////
 
 //Executes parses command in commandLineBuffer and executes in foreground for child process
-void childProcessExecuteCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength){
+void childProcessExecuteCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLength, BOOL isBackgroundCommand){
     //expand all '$$'' to pid in commandLineBuffec
     expandVariables(commandLineBuffer, bufferLength);
 
@@ -500,6 +534,39 @@ void childProcessExecuteCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH],
         //no commands (commandLineBuffer was empty of just whitespace), so exit early
         exit(0);
     }
+    //get output redirection if there is any
+    char *outputFileName = parseOutputRedirection(commandArguments);
+    //need to keep track if outputFileName is allocated, so we know if we have to free it
+    //won't be allocated if we manually set to /dev/null
+    BOOL isOutputFileNameAllocated = TRUE;
+    //background commands with no output redirection get sent to /dev/null
+    //based on: http://stackoverflow.com/questions/14846768/in-c-how-do-i-redirect-stdout-fileno-to-dev-null-using-dup2-and-then-redirect
+    if(outputFileName == NULL && isBackgroundCommand == TRUE){
+        outputFileName = "/dev/null";
+        //set flag to false, so we don't try to free this later
+        isOutputFileNameAllocated = FALSE;
+    }
+    
+    //check for output redirection
+    if(outputFileName != NULL){
+        //based on Lecture 12 slides
+        //attempt to redirect standard output to filename
+        int fileDescriptor = open(outputFileName, O_WRONLY|O_CREAT|O_TRUNC, 0644);
+        //check that we were able to open the file
+        //-1 means there was an error trying to do this
+        if(fileDescriptor == -1){
+            printf("cannot open %s for output\n", outputFileName);
+            exit(1);
+        }
+        //redirect standard output '1' to the file we just opened
+        fileDescriptor = dup2(fileDescriptor, 1);
+        //check again for errors
+        if(fileDescriptor == -1){
+            printf("error redirecting standard output to %s\n", outputFileName);
+            exit(1);
+        }
+    }
+
     //first item is commandArguments is program name, and we need to pass it again in the arguments
     int status = execvp(commandArguments[0], commandArguments);
     //free memory allocated for commandArguments
@@ -587,7 +654,7 @@ int executeCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH], int bufferLe
             break;
         //child process executing command
         case 0:
-            childProcessExecuteCommand(commandLineBuffer, bufferLength);
+            childProcessExecuteCommand(commandLineBuffer, bufferLength, isBackgroundCommand);
             //should not reach here, because childProcessExecuteCommand exits, but we need return
             //statement so compiler doesn't complain
             return 0;
