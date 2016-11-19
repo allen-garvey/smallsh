@@ -649,6 +649,10 @@ void childProcessExecuteCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH],
         //no commands (commandLineBuffer was empty of just whitespace), so exit early
         exit(0);
     }
+    //save standard output, since we will need to restore it later if there is an error
+    //with a command that redirects output
+    //based on: http://stackoverflow.com/questions/11042218/c-restore-stdout-to-terminal
+    int standardOutputFileDescriptor = dup(1);
     //redirect standard output as necessary
     redirectOutput(commandArguments, isBackgroundCommand);
     //redirect standard input as necessary
@@ -660,6 +664,8 @@ void childProcessExecuteCommand(char commandLineBuffer[COMMAND_LINE_MAX_LENGTH],
     //or 0 for finished successfully
     if(status == -1){
         status = 1;
+        //restore standard output, so we can print error message
+        dup2(standardOutputFileDescriptor, 1);
         //error status stored in errno, so printout message based on this if not background command
         //(we have already checked that commandArguments has at least length one, so no need to check first)
         printExecutionError(errno, commandArguments[0], isBackgroundCommand);
