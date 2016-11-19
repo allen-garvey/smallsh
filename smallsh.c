@@ -57,9 +57,6 @@ typedef int BOOL;
 /*************************************
 * Handling interrupts
 **************************************/
-//prototype for function so we can use it for interrupts
-BOOL hasProcessStopped(pid_t childProcessId, pid_t waitpidResult, int status);
-int printStatus(int returnStatusCode);
 
 //global variable storing the pid of the current foreground process
 //needs to be global variable, because there is no other way for the interrupt
